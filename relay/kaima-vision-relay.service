@@ -1,0 +1,12 @@
+[Unit]
+Description=kaima demo vision relay (OpenAI-compat -> local Ollama gemma4)
+After=network-online.target
+
+[Service]
+EnvironmentFile=/home/kojima/work/kaima/.env
+ExecStart=/usr/bin/python3 /home/kojima/work/kaima/relay/kaima_vision_relay.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

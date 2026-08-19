@@ -1,0 +1,2 @@
+AddHandler php8.3-script .php
+DirectoryIndex index.php

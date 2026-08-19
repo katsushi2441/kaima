@@ -1,0 +1,40 @@
+<?php
+/**
+ * Kurage AI Meishi Analysis (kaima) の設定。
+ * このファイルを kaima_config.php にコピーして編集してください(.exampleのままでは読み込まれません)。
+ *
+ * 【この製品の考え方】
+ * スマホで名刺を撮って投げるだけ。AIが読み取り「下書き」に登録し、
+ * あなたが原本画像と見比べて承認したものだけが台帳に載ります。
+ * AIは台帳に直接書けません(ソース内の ka_can() が関門です)。
+ */
+
+// ---- 画面 ----
+define('KAIMA_TITLE',       '名刺台帳(Kurage AI名刺解析)');
+define('KAIMA_BRAND_COLOR', '#7a4a8c');
+
+// ---- ログイン ----
+// どちらか一方でよい。KAIMA_PASSWORD_HASH(password_hash()の値)があればそちらが優先。
+define('KAIMA_PASSWORD',      '');
+define('KAIMA_PASSWORD_HASH', '');   // php -r "echo password_hash('パスワード', PASSWORD_DEFAULT);"
+
+// ---- AI(OpenAI互換のvision対応API) ----
+// 画像が読めるモデルが必要です。お手持ちのAPIキーを設定してください。
+define('KAIMA_API_BASE', 'https://api.openai.com/v1');
+define('KAIMA_API_KEY',  'sk-xxxx');            // ★あなたのAPIキーに置き換え
+define('KAIMA_MODEL',    'gpt-4o-mini');
+
+// ---- 社内メンバー(名刺の持ち主候補。カンマ区切り) ----
+// 「この会社、うちの誰が知ってる?」の接点記録に使います。
+define('KAIMA_HOLDERS', '');    // 例: '山田,佐藤,鈴木'
+
+// ---- 外部API(スキャナ・一括取り込み連携の入口。空なら無効) ----
+// POST {url}?api=upload  ヘッダ X-KAIMA-TOKEN  multipart: image, holder, place, date
+define('KAIMA_API_TOKEN', '');
+
+// ---- 利用制限 ----
+define('KAIMA_RATE_PER_HOUR', 30);  // 同一IPが1時間にAI解析できる枚数(API費用の防波堤)
+define('KAIMA_MAX_FILES', 5);       // 1回のアップロード枚数上限
+
+// ---- デモモード ----
+define('KAIMA_DEMO', false);
