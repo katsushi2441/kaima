@@ -880,4 +880,5 @@ if (!$drafts): ?>
 <div class="foot">Kurage AI Meishi Analysis — 読み取りはAI、確定はあなた。<?php if (KAIMA_DEMO): ?>(デモ環境・AI解析は1時間<?php echo ka_rate_max(); ?>枚まで)<?php endif; ?></div>
 </div>
 <?php endif; ?>
+<?php if (($_SERVER['HTTP_HOST'] ?? '') === 'proto.exbridge.jp'): ?><p style="text-align:center;font-size:13px;margin:14px 0;color:#5d6b7a">これはデモです。<a href="https://kappstore.exbridge.jp/app.php?id=4679d4cf90699580&amp;ref=kaima" target="_blank" rel="noopener">この製品をオンプレミスで導入する（商品ページ）</a></p><?php endif; ?>
 </body></html>
