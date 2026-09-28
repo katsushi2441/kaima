@@ -6,7 +6,7 @@
 
 - KAIMA_RELAY_TOKEN（kaima）… これまでどおり。画像つきの OpenAI 形式を Ollama ネイティブ /api/chat に変換（think:false）
 - RELAY_CLIENT_<名前>=<合言葉>（klchatbot など）… Ollama の OpenAI 互換 /v1/chat/completions にそのまま中継。
-  逐次表示(stream)と道具(tools)が通る。モデルは gemma4 に固定、思考は切る(reasoning_effort=none)、max_tokens は 1200 まで
+  逐次表示(stream)と道具(tools)が通る。モデルは gemma4 に固定、思考は切る(reasoning_effort=none)、max_tokens は 2000 まで
 - 回数制限: kaima は IP ごと（従来どおり）。ほかの製品は heteml から同じ IP で来るので、製品ごとに1時間 RELAY_CLIENT_RATE 回
 - **デモで DeepSeek を使わない**（有料サービス専用）。ここは gemma4 にしかつながない
 標準ライブラリのみ。systemd user unit: kaima-vision-relay.service
@@ -30,7 +30,7 @@ CLIENTS = {k[len("RELAY_CLIENT_"):].lower(): v for k, v in os.environ.items()
            if k.startswith("RELAY_CLIENT_") and k != "RELAY_CLIENT_RATE" and v}
 CLIENT_RATE = int(os.environ.get("RELAY_CLIENT_RATE", "300"))
 OPENAI_UPSTREAM = os.environ.get("RELAY_OPENAI_UPSTREAM", "http://192.168.0.3:11434/v1/chat/completions")
-PASS_MAX_TOKENS = 1200
+PASS_MAX_TOKENS = 2000
 PASS_SEM = threading.BoundedSemaphore(2)   # GPU を詰まらせない（同時2本まで）
 
 # vista-ats の /analyze も、ここで受ける（もとは vista-ats-relay :18346）。
