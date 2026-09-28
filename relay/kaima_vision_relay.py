@@ -33,6 +33,22 @@ OPENAI_UPSTREAM = os.environ.get("RELAY_OPENAI_UPSTREAM", "http://192.168.0.3:11
 PASS_MAX_TOKENS = 1200
 PASS_SEM = threading.BoundedSemaphore(2)   # GPU を詰まらせない（同時2本まで）
 
+# vista-ats の /analyze も、ここで受ける（もとは vista-ats-relay :18346）。
+# 処理は vista-ats の製品コード（vista-ats/relay/vista_ats_relay.py）をそのまま読み込んで使う（写さない）。
+# **バックエンドは ollama(gemma4) に固定**。vista のコードには OpenAI 互換(DeepSeek)の道もあるが、デモでは通さない。
+VISTA = None
+VISTA_RELAY_PY = os.environ.get("VISTA_RELAY_PY", "/home/kojima/work/vista-ats/relay/vista_ats_relay.py")
+if os.environ.get("RELAY_VISTA_TOKEN") and os.path.exists(VISTA_RELAY_PY):
+    import importlib.util
+    os.environ["VISTA_RELAY_BACKEND"] = "ollama"
+    os.environ["VISTA_RELAY_TOKEN"] = os.environ["RELAY_VISTA_TOKEN"]
+    os.environ.setdefault("VISTA_OLLAMA_URL", "http://192.168.0.3:11434")
+    os.environ.setdefault("VISTA_OLLAMA_MODEL", MODEL)
+    _spec = importlib.util.spec_from_file_location("vista_ats_relay", VISTA_RELAY_PY)
+    VISTA = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(VISTA)
+    assert VISTA.BACKEND == "ollama"
+
 hits = {}  # ip -> [timestamps]
 
 
@@ -67,13 +83,20 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send(self, status, obj):   # vista-ats のコードが使う名前
+        return self._json(status, obj)
+
     def do_GET(self):
+        if VISTA is not None and self.path.rstrip("/") == "/health":
+            return VISTA.Handler.do_GET(self)
         if self.path == "/healthz":
             return self._json(200, {"ok": 1, "app": "kaima-vision-relay", "model": MODEL,
-                                    "clients": ["kaima"] + sorted(CLIENTS)})
+                                    "clients": ["kaima"] + sorted(CLIENTS) + (["vista-ats"] if VISTA else [])})
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
+        if VISTA is not None and self.path.rstrip("/") == "/analyze":
+            return VISTA.Handler.do_POST(self)   # 合言葉(X-Vista-Token)の確かめも vista のコードで行う
         if self.path != "/v1/chat/completions":
             return self._json(404, {"error": "not found"})
         client = client_of(self.headers.get("Authorization", ""))
