@@ -49,6 +49,31 @@ if os.environ.get("RELAY_VISTA_TOKEN") and os.path.exists(VISTA_RELAY_PY):
     _spec.loader.exec_module(VISTA)
     assert VISTA.BACKEND == "ollama"
 
+# X 返信候補（xb4g/giin）の「URL を入れて1件作る」もここで受ける（新しいポートは立てない）。
+# 文は codex(gpt-6-sol) が書くので1〜3分かかる。受け付けたら id を返し、ページは GET /xreply/<id> で待つ。同時に1件だけ
+XREPLY_TOKEN = os.environ.get("RELAY_XREPLY_TOKEN", "")
+XREPLY_PY = "/home/kojima/work/xb4g/giin/scripts/x_reply_draft.py"
+XREPLY_JOBS = {}
+XREPLY_LOCK = threading.Lock()
+
+
+def xreply_run(jid, url):
+    import subprocess
+    job = XREPLY_JOBS[jid]
+    try:
+        r = subprocess.run(["/usr/bin/python3", XREPLY_PY, "--url", url], capture_output=True, text=True, timeout=900,
+                           cwd=os.path.dirname(os.path.dirname(XREPLY_PY)))
+        out = json.loads((r.stdout or "").strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
+        if out is None:
+            job.update(state="error", message="作る途中で失敗しました: " + (r.stderr or "")[-200:])
+        else:
+            job.update(state="done", html=out.get("html", ""), message=out.get("message", ""))
+    except Exception as e:  # noqa: BLE001
+        job.update(state="error", message=f"作る途中で失敗しました: {type(e).__name__}")
+    finally:
+        XREPLY_LOCK.release()
+
+
 hits = {}  # ip -> [timestamps]
 
 
@@ -86,7 +111,17 @@ class H(http.server.BaseHTTPRequestHandler):
     def _send(self, status, obj):   # vista-ats のコードが使う名前
         return self._json(status, obj)
 
+    def _xreply_ok(self):
+        return bool(XREPLY_TOKEN) and hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {XREPLY_TOKEN}")
+
     def do_GET(self):
+        if self.path.startswith("/xreply/"):
+            if not self._xreply_ok():
+                return self._json(401, {"error": "invalid token"})
+            job = XREPLY_JOBS.get(self.path[len("/xreply/"):])
+            if not job:
+                return self._json(404, {"state": "error", "message": "受付番号が見つかりません（中継が再起動した可能性）"})
+            return self._json(200, {k: v for k, v in job.items() if k != "t"})
         if VISTA is not None and self.path.rstrip("/") == "/health":
             return VISTA.Handler.do_GET(self)
         if self.path == "/healthz":
@@ -95,6 +130,26 @@ class H(http.server.BaseHTTPRequestHandler):
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path.rstrip("/") == "/xreply":
+            if not self._xreply_ok():
+                return self._json(401, {"error": "invalid token"})
+            try:
+                url = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}").get("url", "")
+            except ValueError:
+                return self._json(400, {"error": "JSON で url を送ってください"})
+            if not isinstance(url, str) or not url.startswith(("https://x.com/", "https://twitter.com/")) or "/status/" not in url:
+                return self._json(400, {"error": "X の投稿の URL（https://x.com/…/status/数字）を入れてください"})
+            if not rate_ok("client:xreply", 30):
+                return self._json(429, {"error": "1時間に作れる数を超えました。時間をおいてください"})
+            if not XREPLY_LOCK.acquire(blocking=False):
+                return self._json(429, {"error": "いま別の1件を作っています。終わってからもう一度押してください"})
+            now = time.time()
+            for k in [k for k, v in XREPLY_JOBS.items() if v["t"] < now - 86400]:
+                del XREPLY_JOBS[k]
+            jid = hmac.new(b"x", f"{url}{now}".encode(), "sha256").hexdigest()[:16]
+            XREPLY_JOBS[jid] = {"state": "running", "message": "投稿を読んで返信文を作っています", "t": now}
+            threading.Thread(target=xreply_run, args=(jid, url), daemon=True).start()
+            return self._json(200, {"id": jid})
         if VISTA is not None and self.path.rstrip("/") == "/analyze":
             return VISTA.Handler.do_POST(self)   # 合言葉(X-Vista-Token)の確かめも vista のコードで行う
         if self.path != "/v1/chat/completions":
