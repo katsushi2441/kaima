@@ -15,6 +15,7 @@ import hmac
 import http.server
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -54,7 +55,11 @@ if os.environ.get("RELAY_VISTA_TOKEN") and os.path.exists(VISTA_RELAY_PY):
 XREPLY_TOKEN = os.environ.get("RELAY_XREPLY_TOKEN", "")
 XREPLY_PY = "/home/kojima/work/xb4g/giin/scripts/x_reply_draft.py"
 XREPLY_JOBS = {}
-XREPLY_LOCK = threading.Lock()
+# 同時に2件まで（2026-10-09: 1件だと、作っている間に次を押すと 429 で断られていた）
+XREPLY_LOCK = threading.BoundedSemaphore(2)
+# x_reply_draft.py が投稿IDごとに残す作り置き。あれば作業を始めずにその場で返す
+XREPLY_CACHE = "/home/kojima/work/xb4g/giin/outputs/x_reply_pick/one/cache"
+XREPLY_CACHE_SEC = 6 * 3600
 
 
 def xreply_run(jid, url):
@@ -141,8 +146,19 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self._json(400, {"error": "X の投稿の URL（https://x.com/…/status/数字）を入れてください"})
             if not rate_ok("client:xreply", 30):
                 return self._json(429, {"error": "1時間に作れる数を超えました。時間をおいてください"})
+            now = time.time()
+            m = re.search(r"/status/(\d+)", url)
+            cp = os.path.join(XREPLY_CACHE, f"{m.group(1)}.json") if m else ""
+            if cp and os.path.exists(cp) and now - os.path.getmtime(cp) < XREPLY_CACHE_SEC:
+                try:
+                    out = json.load(open(cp, encoding="utf-8"))
+                    jid = hmac.new(b"x", f"{url}{now}".encode(), "sha256").hexdigest()[:16]
+                    XREPLY_JOBS[jid] = {"state": "done", "html": out.get("html", ""), "message": out.get("message", ""), "t": now}
+                    return self._json(200, {"id": jid})
+                except ValueError:
+                    pass
             if not XREPLY_LOCK.acquire(blocking=False):
-                return self._json(429, {"error": "いま別の1件を作っています。終わってからもう一度押してください"})
+                return self._json(429, {"error": "いま別の2件を作っています。終わってからもう一度押してください"})
             now = time.time()
             for k in [k for k, v in XREPLY_JOBS.items() if v["t"] < now - 86400]:
                 del XREPLY_JOBS[k]
