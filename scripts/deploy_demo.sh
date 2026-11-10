@@ -21,3 +21,5 @@ up demo/index.php index.php
 up demo/.htaccess .htaccess
 up public/kaima_data/.htaccess kaima_data/.htaccess
 echo "published: https://proto.exbridge.jp/kaima/"
+# デモを検索に載せる（製品が出す noindex を、デモ用の head に置き換える）。配置し直すたびに要る
+/usr/bin/python3 /home/kojima/work/proto_exbridge_jp/scripts/demo_index_head.py kaima
